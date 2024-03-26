@@ -2,18 +2,30 @@ import { Button } from '../../components/ui/button';
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { useForm } from 'react-hook-form';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Loader from '@/components/ui/shared/Loader';
 import {  Form,  FormControl,  FormDescription,  FormField,  FormItem, FormLabel, FormMessage} from "../../components/ui/form"
 import { Input } from "../../components/ui/input"
 import { SignupValidation } from '@/lib/validation';
+import { createUserAccount } from '@/lib/appwrite/api';
+import { useToast } from '@/components/ui/use-toast';
+import { useCreateUserAccount, useSignInAccount } from '@/lib/react-query/queriesAndMutations';
+import { useUserContext } from '@/context/AuthContext';
 
 
-
+/* The code block is defining a functional component called `SignupForm`. */
 const SignupForm = () => {
+  const { toast } = useToast();
+  const { checkAuthUser, isLoading : isUserLoading } = useUserContext();
+  /**
+   * mutateAsync : createUserAccount function which creates the user and saves it in the database
+   */
+  const navigate = useNavigate();
+  const { mutateAsync: createUserAccount, isPending : isCreatingUser } = useCreateUserAccount();
+  const { mutateAsync : signInAccount, isPending : isSigningIn } = useSignInAccount();
 
-  const isLoading = false;
-  // 1. Define your form.
+
+  /* The `useForm` hook from the `react-hook-form` library is being used to create a form instance. */
   const form = useForm<z.infer<typeof SignupValidation>>({
     resolver: zodResolver(SignupValidation),
     defaultValues: {
@@ -24,11 +36,48 @@ const SignupForm = () => {
     },
   })
  
-  // 2. Define a submit handler.
-  function onSubmit(values: z.infer<typeof SignupValidation>) {
-    // Do something with the form values.
-    // ✅ This will be type-safe and validated.
-    console.log(values)
+  /**
+   * The function `onSubmit` is an asynchronous function that takes in values and creates a new user
+   * account using those values, then logs the new user.
+   * @param values - The `values` parameter is an object that represents the form values submitted by
+   * the user. It is inferred from the `SignupValidation` schema, which is likely a validation schema
+   * or type definition for the form fields.
+   * 
+   * 
+   * we create an account, add it to the user context and navigate to the home page. 
+   */
+  async function onSubmit(values: z.infer<typeof SignupValidation>) {
+    const newUser = await createUserAccount(values);
+    if(!newUser) {
+      return toast({
+        title: 'Signup failed. Please try again.'
+      })
+    }
+
+    const session = await signInAccount({
+      email: values.email,
+      password: values.password
+    });
+
+    if(!session) {
+      return toast({
+        title: 'SignIn failed. Please try again.'
+      })
+    }
+    /**
+     * The user signs in and a session is created. 
+     * Now store this session in react-context
+     */
+    const isLoggedIn = await checkAuthUser();
+    if(isLoggedIn) {
+      form.reset();
+      navigate('/');
+    }
+    else{
+      return toast({
+        title: 'SignIn failed. Please try again.'
+      })
+    }
   }
 
   return (
@@ -103,7 +152,7 @@ const SignupForm = () => {
               )}
             />
             <Button className='shad-button_primary' type="submit">
-                {isLoading ? (
+                {isCreatingUser ? (
                   <div className='flex-center gap-2'>
                     <Loader />
                   </div>
